@@ -1,0 +1,40 @@
+# Six "branch servers" on your laptop, read from lab/inventory.json so names and addresses always
+# match what onboarding/onboard.py connects to. Needs VirtualBox and Vagrant, and about 8 GB of free
+# memory for all six (4 Linux at 1 GB, 2 Windows at 2 GB).
+#
+#   cd lab/branches
+#   vagrant up                        # all six
+#   vagrant up branch-01-winnipeg     # or just one
+#
+# Like real branch servers that nobody has looked after, they start with missing patches and weak
+# settings (see linux.sh and windows.ps1), for milestones 2 and 3 to find and fix.
+require "json"
+
+inventory = JSON.parse(File.read(File.join(__dir__, "..", "inventory.json")))
+branches = inventory["machines"].select { |m| m["cloud"] == "onprem" }
+operator_key = File.expand_path(ENV.fetch("OPERATOR_PUBLIC_KEY", "~/.ssh/id_ed25519.pub"))
+
+Vagrant.configure("2") do |config|
+  branches.each do |m|
+    config.vm.define m["name"] do |node|
+      node.vm.hostname = m["name"]
+      node.vm.network "private_network", ip: m["host"]
+
+      # onboard.py connects over SSH with your own key, not Vagrant's.
+      if File.exist?(operator_key)
+        node.vm.provision "file", source: operator_key, destination: m["os"] == "windows" ? "C:/tmp/operator.pub" : "/tmp/operator.pub"
+      end
+
+      if m["os"] == "windows"
+        node.vm.box = "gusztavvargadr/windows-server-2022-standard"
+        node.vm.communicator = "winrm"
+        node.vm.provider("virtualbox") { |vb| vb.memory = 2048; vb.cpus = 2 }
+        node.vm.provision "shell", path: "windows.ps1"
+      else
+        node.vm.box = "bento/ubuntu-22.04"
+        node.vm.provider("virtualbox") { |vb| vb.memory = 1024; vb.cpus = 1 }
+        node.vm.provision "shell", path: "linux.sh"
+      end
+    end
+  end
+end

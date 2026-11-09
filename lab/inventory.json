@@ -1,0 +1,76 @@
+{
+  "machines": [
+    {
+      "name": "branch-01-winnipeg",
+      "os": "linux",
+      "site": "winnipeg",
+      "ring": "test",
+      "cloud": "onprem",
+      "host": "192.168.56.11",
+      "user": "vagrant"
+    },
+    {
+      "name": "branch-02-brandon",
+      "os": "linux",
+      "site": "brandon",
+      "ring": "branch",
+      "cloud": "onprem",
+      "host": "192.168.56.12",
+      "user": "vagrant"
+    },
+    {
+      "name": "branch-03-steinbach",
+      "os": "linux",
+      "site": "steinbach",
+      "ring": "branch",
+      "cloud": "onprem",
+      "host": "192.168.56.13",
+      "user": "vagrant"
+    },
+    {
+      "name": "branch-04-thompson",
+      "os": "linux",
+      "site": "thompson",
+      "ring": "branch",
+      "cloud": "onprem",
+      "host": "192.168.56.14",
+      "user": "vagrant"
+    },
+    {
+      "name": "branch-05-winkler",
+      "os": "windows",
+      "site": "winkler",
+      "ring": "test",
+      "cloud": "onprem",
+      "host": "192.168.56.15",
+      "user": "vagrant"
+    },
+    {
+      "name": "branch-06-selkirk",
+      "os": "windows",
+      "site": "selkirk",
+      "ring": "branch",
+      "cloud": "onprem",
+      "host": "192.168.56.16",
+      "user": "vagrant"
+    },
+    {
+      "name": "acquired-01",
+      "os": "linux",
+      "site": "aws-ca-central-1",
+      "ring": "branch",
+      "cloud": "aws",
+      "host": "aws:acquired-01",
+      "user": "ubuntu"
+    },
+    {
+      "name": "acquired-02",
+      "os": "linux",
+      "site": "aws-ca-central-1",
+      "ring": "test",
+      "cloud": "aws",
+      "host": "aws:acquired-02",
+      "user": "ubuntu"
+    }
+  ]
+}
