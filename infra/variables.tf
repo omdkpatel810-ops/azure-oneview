@@ -87,3 +87,16 @@ variable "paused_rings" {
     error_message = "Pause only rings that exist in patch_rings."
   }
 }
+
+# Milestone 3: security baselines (baseline.tf)
+
+variable "defender_for_servers" {
+  description = "Defender for Servers on the whole subscription: off, P1 or P2. Each costs per server per month; see baseline.tf."
+  type        = string
+  default     = "off"
+
+  validation {
+    condition     = contains(["off", "P1", "P2"], var.defender_for_servers)
+    error_message = "Use off, P1 or P2."
+  }
+}

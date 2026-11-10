@@ -1,0 +1,7 @@
+// The latest security baseline report from each Arc server: every rule, passing or failing, with reasons.
+guestconfigurationresources
+| where type =~ "microsoft.guestconfiguration/guestconfigurationassignments" and resourceGroup =~ "{resource_group}"
+| where name startswith "AzureLinuxBaseline" or name startswith "AzureWindowsBaseline"
+| project machine = tostring(split(id, "/")[8]), baseline = tostring(split(name, "$")[0]),
+          status = tostring(properties.complianceStatus), checkedAt = tostring(properties.lastComplianceStatusChecked),
+          rules = properties.latestAssignmentReport.resources

@@ -5,11 +5,11 @@ patching with a test ring, security baselines and central logs.**
 
 [![CI](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml/badge.svg)](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml)
 
-> **Status: milestones 1 and 2 of 4 are built and tested offline.** Onboarding (the identity, Key Vault,
-> the eight-machine lab and the onboarding script) and patching (two rings in Azure Update Manager and a
-> compliance report) are done: 16 Terraform tests run against mocked Azure and AWS providers, and 30
-> Python tests check the scripts. The first real run waits on the Azure subscription; its measured
-> results will go here.
+> **Status: milestones 1 to 3 of 4 are built and tested offline.** Onboarding (the identity, Key Vault,
+> the eight-machine lab and the onboarding script), patching (two rings in Azure Update Manager and a
+> compliance report) and security baselines (Azure Policy machine configuration and a score report)
+> are done: 20 Terraform tests run against mocked Azure and AWS providers, and 40 Python tests check
+> the scripts. The first real run waits on the Azure subscription; its measured results will go here.
 
 ## The problem
 
@@ -111,6 +111,37 @@ python -m oneview.patching compare results/patches-before.json results/patches-a
 The report gives compliance for the fleet and for each ring, and each server's missing critical,
 security and other updates. The comparison shows each server before and after.
 
+## Milestone 3: security baselines
+
+[`infra/baseline.tf`](infra/baseline.tf) assigns Microsoft's Azure compute security baseline, which is
+built from the CIS benchmarks, to every Arc server in OneView's resource group, one policy for Linux and
+one for Windows:
+
+- **The servers check themselves.** Azure Policy machine configuration is built into the Connected
+  Machine agent, so there's no extension to install. Each server runs the baseline's rules about every 15
+  minutes and reports each one as passing or failing, with the reason.
+- **Arc servers have to be asked for.** Both policies skip Arc servers unless `IncludeArcMachines` is
+  `"true"`; a test makes sure it stays that way.
+- **The policies only audit.** They change nothing on the servers, so fixing a server is a deliberate
+  step: `vagrant provision --provision-with harden` runs
+  [`harden-linux.sh`](lab/branches/harden-linux.sh) and [`harden-windows.ps1`](lab/branches/harden-windows.ps1),
+  which undo the weak settings the lab started with.
+- **Defender for Servers is optional.** `defender_for_servers = "P1"` or `"P2"` turns it on. It's off by
+  default because it covers the whole subscription, not just OneView, and costs money for every server.
+
+[`oneview/baseline.py`](oneview/baseline.py) scores each server: the share of the baseline's rules it
+passes, which rules fail and why, and how many Defender for Cloud recommendations it fails, by severity.
+
+```bash
+python -m oneview.baseline snapshot --save before
+(cd lab/branches && vagrant provision --provision-with harden)
+python -m oneview.baseline snapshot --save after      # after the next check, about 15 minutes later
+python -m oneview.baseline compare results/baseline-before.json results/baseline-after.json
+```
+
+The comparison shows each server's score before and after, the rules it fixed, and any that started
+failing.
+
 ## Running it
 
 You need Guardrails deployed (OneView's resource group is vended from its
@@ -136,12 +167,18 @@ terraform -chdir=infra apply -var onboarding_open=false -var 'operator_ip_ranges
 # 5. Patch compliance before the first window, and after both have run
 python -m oneview.patching snapshot --assess
 python -m oneview.patching snapshot --save before
+
+# 6. Baseline scores, then fix the branch servers and score them again
+python -m oneview.baseline snapshot --save before
+(cd lab/branches && vagrant provision --provision-with harden)
 ```
 
 **Cost.** Azure Arc is free for the servers themselves. The Key Vault costs a few cents. Azure Update
 Manager [charges](https://azure.microsoft.com/pricing/details/azure-update-management-center/) about
 $5 per Arc server per month, prorated by the day, for each day a server is connected and has a check or
-a schedule: about $1.30 a day for all eight, so disconnect the lab between runs. The AWS servers
+a schedule: about $1.30 a day for all eight, so disconnect the lab between runs. The baseline checks
+are free on Arc servers. Defender for Servers, if you turn it on, costs about $5 (Plan 1) or $15 (Plan 2)
+per server per month; Plan 2 includes Update Manager. The AWS servers
 fit the free tier. The branch servers cost only your laptop's memory: about 8 GB for all six, so start
 fewer if you need to.
 
@@ -151,11 +188,13 @@ fewer if you need to.
 |---|---|---|
 | The onboarding script: inventory checks, host lookup, both systems' scripts, where the secret goes, re-runs, failures | pytest, with a stand-in shell | 20 |
 | The patch report: counts by classification on both systems, never-checked servers, rings, before and after, on-demand checks | pytest, with a stand-in `az` and Resource Graph rows | 10 |
+| The baseline report: scores, failing rules and reasons, servers without a report, Defender findings, before and after | pytest, with a stand-in `az` and Resource Graph rows | 10 |
 | The onboarding identity's scope, the secret's lifetime and rotation, the vault's lock-down | `terraform test`, mocked Azure | 5 |
 | The patch windows: two rings, test first, after hours only, pausing a ring, the daily check on both systems | `terraform test`, mocked Azure | 8 |
+| The baselines: both systems, Arc servers included, OneView's resource group only; Defender off unless asked for | `terraform test`, mocked Azure | 4 |
 | The AWS servers: one per inventory entry, SSH from one address, IMDSv2, encrypted disks | `terraform test`, mocked AWS | 3 |
 | Python coverage | pytest-cov | 100% |
-| Formatting, validation, linting, security scanning | `terraform fmt` and `validate`, tflint, Checkov, ruff, shellcheck, `ruby -c` | every push |
+| Formatting, validation, linting, security scanning | `terraform fmt` and `validate`, tflint, Checkov, ruff, shellcheck, `ruby -c`, the PowerShell parser | every push |
 
 Checkov passes 18 checks on the Terraform and skips 6, each with its reason written next to it. It passes all
 100 checks on the workflow.
@@ -164,15 +203,15 @@ Checkov passes 18 checks on the Terraform and skips 6, each with its reason writ
 
 1. **Arc-enable six laptop VMs and two VMs in another cloud** ✅ built and tested offline
 2. **Patch schedules with a test ring** in Azure Update Manager: test ring first, branches after hours ✅ built and tested offline
-3. **CIS baseline checks** with Azure Policy machine configuration, and Defender for Cloud findings
+3. **Security baseline checks** (built from CIS) with Azure Policy machine configuration, and Defender for Cloud findings ✅ built and tested offline
 4. **Central logs in Sentinel**, and an emergency patch drill that times how long it takes to patch every server
 
 ## Layout
 
 ```
-infra/          Terraform: the onboarding identity, its secret and the Key Vault; patch windows
-lab/            the eight servers: inventory.json, branches/ (Vagrant) and aws/ (Terraform)
+infra/          Terraform: the onboarding identity, its secret and the Key Vault; patch windows; baselines
+lab/            the eight servers: inventory.json, branches/ (Vagrant, with the hardening scripts) and aws/ (Terraform)
 onboarding/     onboard.py: connect every server to Azure Arc, and time it
-oneview/        reports from Azure Resource Graph: patching.py, and its queries/
+oneview/        reports from Azure Resource Graph: patching.py, baseline.py, and their queries/
 tests/          Python tests
 ```

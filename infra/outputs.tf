@@ -15,3 +15,8 @@ output "patch_windows" {
   description = "Each ring's patch window."
   value       = { for ring, mc in azurerm_maintenance_configuration.ring : ring => "${mc.window[0].recur_every} at ${var.patch_rings[ring].start} ${var.patch_time_zone}, ${mc.window[0].duration} h" }
 }
+
+output "baseline_policies" {
+  description = "The baseline policy assignments, for checking compliance in the portal."
+  value       = { for os, a in azurerm_resource_group_policy_assignment.baseline : os => a.id }
+}

@@ -1,0 +1,7 @@
+// Defender for Cloud recommendations each Arc server fails.
+securityresources
+| where type =~ "microsoft.security/assessments" and tostring(properties.status.code) =~ "Unhealthy"
+| extend resourceId = tolower(tostring(properties.resourceDetails.Id))
+| where resourceId contains "/providers/microsoft.hybridcompute/machines/" and resourceId contains "/resourcegroups/{resource_group}/"
+| project machine = tostring(split(resourceId, "/")[8]), recommendation = tostring(properties.displayName),
+          severity = tostring(properties.metadata.severity)
