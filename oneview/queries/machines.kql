@@ -1,0 +1,5 @@
+// Every Arc server in OneView's resource group, with the tags onboard.py set.
+resources
+| where type =~ "microsoft.hybridcompute/machines" and resourceGroup =~ "{resource_group}"
+| project name, os = tostring(properties.osType), ring = tostring(tags.ring), site = tostring(tags.site),
+          cloud = tostring(tags.cloud), status = tostring(properties.status)

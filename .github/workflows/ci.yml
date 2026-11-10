@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   python:
-    name: Onboarding script and lab
+    name: Python scripts and lab
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

@@ -5,10 +5,11 @@ patching with a test ring, security baselines and central logs.**
 
 [![CI](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml/badge.svg)](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml)
 
-> **Status: milestone 1 of 4 is built and tested offline.** The onboarding identity, Key Vault, the
-> eight-machine lab and the onboarding script are done: 8 Terraform tests run against mocked Azure and AWS
-> providers, and 20 Python tests check the onboarding script. The first real run waits on the Azure
-> subscription; its measured results will go here.
+> **Status: milestones 1 and 2 of 4 are built and tested offline.** Onboarding (the identity, Key Vault,
+> the eight-machine lab and the onboarding script) and patching (two rings in Azure Update Manager and a
+> compliance report) are done: 16 Terraform tests run against mocked Azure and AWS providers, and 30
+> Python tests check the scripts. The first real run waits on the Azure subscription; its measured
+> results will go here.
 
 ## The problem
 
@@ -74,6 +75,42 @@ python onboarding/onboard.py --dry-run    # every script, with the secret shown 
 python onboarding/onboard.py              # connect the lot
 ```
 
+## Milestone 2: patching with a test ring
+
+[`infra/patching.tf`](infra/patching.tf) sets up Azure Update Manager with two weekly windows:
+
+| Ring | Servers | Window (Winnipeg time) |
+|---|---|---|
+| test | branch-01-winnipeg, branch-05-winkler, acquired-02: one of each kind | Tuesdays, 10 p.m. to 1 a.m. |
+| branch | the other five | Thursdays, 10 p.m. to 1 a.m. |
+
+- **Servers join a window by their tag.** Each window picks up Arc servers in OneView's resource group
+  whose `ring` tag matches, so a new branch server is patched on the right night as soon as
+  `onboard.py` connects it. There is no list of servers to keep up to date.
+- **Critical and security updates only**, rebooting only when an update needs it.
+- **The test ring goes two days ahead.** If it finds a bad patch, set `paused_rings = ["branch"]` and
+  apply before Thursday: the branches' window stays, with no servers in it. Update Manager doesn't hold
+  the second ring back by itself, so this step is the gate.
+- **Terraform refuses unsafe windows**: one during business hours (it must start at 7 p.m. or later, or
+  end by 7 a.m.), one shorter than 90 minutes or longer than 6 hours, or a plan without a test ring.
+- **Every server checks for missing updates daily**, through Microsoft's built-in policy for Arc
+  servers, so the compliance report is never more than a day old.
+
+[`oneview/patching.py`](oneview/patching.py) reports compliance from Azure Resource Graph. A server is
+compliant when its latest check found no missing critical or security updates. A server that has never
+been checked counts as not compliant, because an unknown state isn't a good one.
+
+```bash
+python -m oneview.patching snapshot --assess        # ask every server to check now
+python -m oneview.patching snapshot --save before   # a few minutes later
+# ...after both windows have run
+python -m oneview.patching snapshot --save after
+python -m oneview.patching compare results/patches-before.json results/patches-after.json
+```
+
+The report gives compliance for the fleet and for each ring, and each server's missing critical,
+security and other updates. The comparison shows each server before and after.
+
 ## Running it
 
 You need Guardrails deployed (OneView's resource group is vended from its
@@ -95,9 +132,16 @@ terraform -chdir=lab/aws apply -var "operator_cidr=$(curl -s https://ifconfig.me
 # 4. Connect them all, then close onboarding
 python onboarding/onboard.py
 terraform -chdir=infra apply -var onboarding_open=false -var 'operator_ip_ranges=[...]'
+
+# 5. Patch compliance before the first window, and after both have run
+python -m oneview.patching snapshot --assess
+python -m oneview.patching snapshot --save before
 ```
 
-**Cost.** Azure Arc is free for the servers themselves. The Key Vault costs a few cents. The AWS servers
+**Cost.** Azure Arc is free for the servers themselves. The Key Vault costs a few cents. Azure Update
+Manager [charges](https://azure.microsoft.com/pricing/details/azure-update-management-center/) about
+$5 per Arc server per month, prorated by the day, for each day a server is connected and has a check or
+a schedule: about $1.30 a day for all eight, so disconnect the lab between runs. The AWS servers
 fit the free tier. The branch servers cost only your laptop's memory: about 8 GB for all six, so start
 fewer if you need to.
 
@@ -105,9 +149,12 @@ fewer if you need to.
 
 | What | How | Count |
 |---|---|---|
-| The onboarding script: inventory checks, host lookup, both systems' scripts, where the secret goes, re-runs, failures | pytest, with a stand-in shell | 20, 100% coverage |
+| The onboarding script: inventory checks, host lookup, both systems' scripts, where the secret goes, re-runs, failures | pytest, with a stand-in shell | 20 |
+| The patch report: counts by classification on both systems, never-checked servers, rings, before and after, on-demand checks | pytest, with a stand-in `az` and Resource Graph rows | 10 |
 | The onboarding identity's scope, the secret's lifetime and rotation, the vault's lock-down | `terraform test`, mocked Azure | 5 |
+| The patch windows: two rings, test first, after hours only, pausing a ring, the daily check on both systems | `terraform test`, mocked Azure | 8 |
 | The AWS servers: one per inventory entry, SSH from one address, IMDSv2, encrypted disks | `terraform test`, mocked AWS | 3 |
+| Python coverage | pytest-cov | 100% |
 | Formatting, validation, linting, security scanning | `terraform fmt` and `validate`, tflint, Checkov, ruff, shellcheck, `ruby -c` | every push |
 
 Checkov passes 18 checks on the Terraform and skips 6, each with its reason written next to it. It passes all
@@ -116,15 +163,16 @@ Checkov passes 18 checks on the Terraform and skips 6, each with its reason writ
 ## Roadmap
 
 1. **Arc-enable six laptop VMs and two VMs in another cloud** ✅ built and tested offline
-2. **Patch schedules with a test ring** in Azure Update Manager: test ring first, branches after hours
+2. **Patch schedules with a test ring** in Azure Update Manager: test ring first, branches after hours ✅ built and tested offline
 3. **CIS baseline checks** with Azure Policy machine configuration, and Defender for Cloud findings
 4. **Central logs in Sentinel**, and an emergency patch drill that times how long it takes to patch every server
 
 ## Layout
 
 ```
-infra/          the onboarding identity, its secret and the Key Vault (Terraform)
+infra/          Terraform: the onboarding identity, its secret and the Key Vault; patch windows
 lab/            the eight servers: inventory.json, branches/ (Vagrant) and aws/ (Terraform)
 onboarding/     onboard.py: connect every server to Azure Arc, and time it
+oneview/        reports from Azure Resource Graph: patching.py, and its queries/
 tests/          Python tests
 ```

@@ -1,0 +1,5 @@
+// The latest patch assessment for each Arc server: how many updates are missing, by classification.
+patchassessmentresources
+| where type =~ "microsoft.hybridcompute/machines/patchassessmentresults" and resourceGroup =~ "{resource_group}"
+| project machine = tostring(split(id, "/")[8]), assessedAt = tostring(properties.lastModifiedDateTime),
+          status = tostring(properties.status), counts = properties.availablePatchCountByClassification

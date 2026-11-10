@@ -10,3 +10,8 @@ output "connect" {
     secret_name     = var.onboarding_open ? azurerm_key_vault_secret.onboarding[0].name : null
   }
 }
+
+output "patch_windows" {
+  description = "Each ring's patch window."
+  value       = { for ring, mc in azurerm_maintenance_configuration.ring : ring => "${mc.window[0].recur_every} at ${var.patch_rings[ring].start} ${var.patch_time_zone}, ${mc.window[0].duration} h" }
+}

@@ -17,6 +17,14 @@ mock_provider "azurerm" {
     }
   }
 
+  mock_resource "azurerm_maintenance_configuration" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.Maintenance/maintenanceConfigurations/mc" }
+  }
+
+  mock_resource "azurerm_resource_group_policy_assignment" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.Authorization/policyAssignments/pa" }
+  }
+
   mock_resource "azurerm_key_vault" {
     defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.KeyVault/vaults/kv-oneview" }
   }

@@ -9,7 +9,7 @@ testpaths = ["tests"]
 addopts = "--strict-markers"
 
 [tool.coverage.run]
-source = ["onboarding"]
+source = ["onboarding", "oneview"]
 branch = true
 
 [tool.coverage.report]
@@ -23,4 +23,4 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["onboarding"]
+known-first-party = ["onboarding", "oneview"]
