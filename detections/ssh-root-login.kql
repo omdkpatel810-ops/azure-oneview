@@ -1,0 +1,7 @@
+// A successful SSH login as root.
+Syslog
+| where Facility in ("auth", "authpriv") and ProcessName == "sshd"
+| extend Method = extract(@"^Accepted (\S+) for root from ", 1, SyslogMessage),
+         SourceIP = extract(@" from (\S+) port \d+", 1, SyslogMessage)
+| where isnotempty(Method)
+| project TimeGenerated, Host = HostName, Account = "root", Method, SourceIP

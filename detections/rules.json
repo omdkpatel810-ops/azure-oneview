@@ -1,0 +1,34 @@
+{
+  "ssh-brute-force": {
+    "display_name": "SSH: many failed password logins to one server",
+    "description": "Ten or more failed SSH password logins to one server from one address in 10 minutes. Expected only while password logins are still on; milestone 3 turns them off.",
+    "severity": "Medium",
+    "tactics": ["CredentialAccess"],
+    "techniques": ["T1110"],
+    "entities": {"Host": "Host", "IP": "SourceIP"}
+  },
+  "ssh-root-login": {
+    "display_name": "SSH: someone logged in as root",
+    "description": "A successful SSH login as root. Root logins should be off after milestone 3, so one getting through needs a look.",
+    "severity": "High",
+    "tactics": ["InitialAccess", "PrivilegeEscalation"],
+    "techniques": ["T1078"],
+    "entities": {"Host": "Host", "IP": "SourceIP", "Account": "Account"}
+  },
+  "windows-failed-logons": {
+    "display_name": "Windows: many failed logins for one account",
+    "description": "Ten or more failed logins (event 4625) for one account on one server in 10 minutes.",
+    "severity": "Medium",
+    "tactics": ["CredentialAccess"],
+    "techniques": ["T1110"],
+    "entities": {"Host": "Host", "Account": "Account"}
+  },
+  "windows-new-local-admin": {
+    "display_name": "Windows: account added to local Administrators",
+    "description": "An account was added to a server's local Administrators group (event 4732). Fine if it was a planned change; worth asking about if nobody planned one.",
+    "severity": "High",
+    "tactics": ["Persistence", "PrivilegeEscalation"],
+    "techniques": ["T1098"],
+    "entities": {"Host": "Host", "Account": "Account"}
+  }
+}

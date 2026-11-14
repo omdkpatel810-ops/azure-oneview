@@ -100,3 +100,22 @@ variable "defender_for_servers" {
     error_message = "Use off, P1 or P2."
   }
 }
+
+# Milestone 4: central logs and Sentinel (logs.tf)
+
+variable "log_daily_cap_gb" {
+  description = "Most the workspace takes in per day, in GB. Past it, logs stop until the next day, so the bill can't run away."
+  type        = number
+  default     = 0.2
+
+  validation {
+    condition     = var.log_daily_cap_gb >= 0.1 && var.log_daily_cap_gb <= 5
+    error_message = "Use between 0.1 and 5 GB a day."
+  }
+}
+
+variable "machines_connected" {
+  description = "Set to true once onboard.py has connected every server: then each gets the Azure Monitor Agent and sends its logs."
+  type        = bool
+  default     = false
+}

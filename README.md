@@ -5,11 +5,12 @@ patching with a test ring, security baselines and central logs.**
 
 [![CI](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml/badge.svg)](https://github.com/omdkpatel810-ops/azure-oneview/actions/workflows/ci.yml)
 
-> **Status: milestones 1 to 3 of 4 are built and tested offline.** Onboarding (the identity, Key Vault,
-> the eight-machine lab and the onboarding script), patching (two rings in Azure Update Manager and a
-> compliance report) and security baselines (Azure Policy machine configuration and a score report)
-> are done: 20 Terraform tests run against mocked Azure and AWS providers, and 40 Python tests check
-> the scripts. The first real run waits on the Azure subscription; its measured results will go here.
+> **Status: all 4 milestones are built and tested offline.** Onboarding (the identity, Key Vault, the
+> eight-machine lab and the onboarding script), patching (two rings in Azure Update Manager and a
+> compliance report), security baselines (Azure Policy machine configuration and a score report) and
+> central logs (Sentinel, four alert rules and the emergency patch drill) are done: 26 Terraform tests
+> run against mocked Azure and AWS providers, and 69 Python tests check the scripts and alert rules. The
+> first real run waits on the Azure subscription; its measured results will go here.
 
 ## The problem
 
@@ -142,6 +143,66 @@ python -m oneview.baseline compare results/baseline-before.json results/baseline
 The comparison shows each server's score before and after, the rules it fixed, and any that started
 failing.
 
+## Milestone 4: central logs, alerts and the emergency patch drill
+
+### Every server's logs in one place
+
+[`infra/logs.tf`](infra/logs.tf) creates a Log Analytics workspace with Microsoft Sentinel on it, and
+one data collection rule for all eight servers:
+
+| From | What | Why |
+|---|---|---|
+| Linux | syslog `auth` and `authpriv` | every SSH login, failed or not |
+| Windows | security events 4624, 4625, 4720 and 4732 | logins, failed logins, new accounts, changes to local groups |
+| Windows | System log warnings and errors | crashes and failed services |
+| Both | processor, memory and disk use, every 5 minutes | a server running out of room |
+
+Once `onboard.py` has connected the servers, `machines_connected = true` puts the Azure Monitor Agent
+on each one as an Arc extension, kept up to date automatically, and links it to the rule. The
+workspace has a **daily cap of 0.2 GB**, so a noisy server can't run up the bill. The trade-off: once
+the cap is reached, logs stop until the next day, so alerts that go quiet are worth a look at the cap.
+It keeps 90 days of logs, which Sentinel includes, and Terraform refuses to delete it, since it's the
+audit trail.
+
+### Four alert rules
+
+Each rule is a query in [`detections/`](detections/) with its settings in
+[`rules.json`](detections/rules.json). Sentinel runs each one every 10 minutes and opens an incident
+for anything it finds, naming the server, and the address and account where there is one. (Microsoft
+is moving Sentinel from the Azure portal to the Defender portal after March 31, 2027; the same workspace
+and rules work there.)
+
+| Rule | Fires on | Severity |
+|---|---|---|
+| [SSH: many failed password logins](detections/ssh-brute-force.kql) | 10 or more from one address to one server in 10 minutes | Medium |
+| [SSH: someone logged in as root](detections/ssh-root-login.kql) | any root login, which milestone 3 turns off | High |
+| [Windows: many failed logins](detections/windows-failed-logons.kql) | 10 or more for one account on one server in 10 minutes | Medium |
+| [Windows: account added to local Administrators](detections/windows-new-local-admin.kql) | any addition to the group | High |
+
+KQL can't run offline, so the tests check what they can: every rule has a query and settings, the
+columns an incident names exist, and the patterns the SSH rules use pull the right account and address
+out of real OpenSSH messages, IPv6 included, without counting one attempt twice.
+
+### The emergency patch drill
+
+A critical patch is out: how long until every server has it? [`oneview/drill.py`](oneview/drill.py)
+answers that with a number.
+
+1. It tells every test-ring server to install critical and security updates now, rebooting if needed.
+2. Every 5 minutes it asks each server still going to check for missing updates again.
+3. A server is done when a check made after its ring started finds nothing missing. The time is
+   measured to that check, so it covers the install, any reboot and proof that it worked.
+4. The branches start only when every test server is done. If one isn't done within 4 hours, or an
+   install fails, the drill stops and holds the branches back, as a real rollout should.
+
+```bash
+python -m oneview.drill          # shows which servers it would patch, and changes nothing
+python -m oneview.drill --yes    # runs it, then saves results/drill-<time>.json
+```
+
+The report gives hours to patch per server and per ring, and how many updates each was missing at the
+start.
+
 ## Running it
 
 You need Guardrails deployed (OneView's resource group is vended from its
@@ -171,6 +232,10 @@ python -m oneview.patching snapshot --save before
 # 6. Baseline scores, then fix the branch servers and score them again
 python -m oneview.baseline snapshot --save before
 (cd lab/branches && vagrant provision --provision-with harden)
+
+# 7. Send every server's logs to Sentinel, then run the emergency patch drill
+terraform -chdir=infra apply -var machines_connected=true -var 'operator_ip_ranges=[...]'
+python -m oneview.drill --yes
 ```
 
 **Cost.** Azure Arc is free for the servers themselves. The Key Vault costs a few cents. Azure Update
@@ -178,7 +243,10 @@ Manager [charges](https://azure.microsoft.com/pricing/details/azure-update-manag
 $5 per Arc server per month, prorated by the day, for each day a server is connected and has a check or
 a schedule: about $1.30 a day for all eight, so disconnect the lab between runs. The baseline checks
 are free on Arc servers. Defender for Servers, if you turn it on, costs about $5 (Plan 1) or $15 (Plan 2)
-per server per month; Plan 2 includes Update Manager. The AWS servers
+per server per month; Plan 2 includes Update Manager. Sentinel's
+[first 31 days](https://learn.microsoft.com/azure/sentinel/billing) are free for up to 10 GB a day.
+After that, Log Analytics and Sentinel charge per GB, and the 0.2 GB daily cap holds the most the lab
+can send to about 6 GB a month. The AWS servers
 fit the free tier. The branch servers cost only your laptop's memory: about 8 GB for all six, so start
 fewer if you need to.
 
@@ -189,29 +257,33 @@ fewer if you need to.
 | The onboarding script: inventory checks, host lookup, both systems' scripts, where the secret goes, re-runs, failures | pytest, with a stand-in shell | 20 |
 | The patch report: counts by classification on both systems, never-checked servers, rings, before and after, on-demand checks | pytest, with a stand-in `az` and Resource Graph rows | 10 |
 | The baseline report: scores, failing rules and reasons, servers without a report, Defender findings, before and after | pytest, with a stand-in `az` and Resource Graph rows | 10 |
+| The alert rules: complete settings, incident columns, and the SSH patterns against real OpenSSH messages | pytest | 20 |
+| The patch drill: rings in order, holding the branches when the test ring is stuck or an install fails, retries, hours to patch | pytest, with a simulated fleet and clock | 9 |
 | The onboarding identity's scope, the secret's lifetime and rotation, the vault's lock-down | `terraform test`, mocked Azure | 5 |
 | The patch windows: two rings, test first, after hours only, pausing a ring, the daily check on both systems | `terraform test`, mocked Azure | 8 |
 | The baselines: both systems, Arc servers included, OneView's resource group only; Defender off unless asked for | `terraform test`, mocked Azure | 4 |
+| The logs: a capped workspace with Sentinel, what's collected, the four rules, an agent on every server once connected | `terraform test`, mocked Azure | 6 |
 | The AWS servers: one per inventory entry, SSH from one address, IMDSv2, encrypted disks | `terraform test`, mocked AWS | 3 |
 | Python coverage | pytest-cov | 100% |
 | Formatting, validation, linting, security scanning | `terraform fmt` and `validate`, tflint, Checkov, ruff, shellcheck, `ruby -c`, the PowerShell parser | every push |
 
 Checkov passes 18 checks on the Terraform and skips 6, each with its reason written next to it. It passes all
-100 checks on the workflow.
+104 checks on the workflow.
 
 ## Roadmap
 
 1. **Arc-enable six laptop VMs and two VMs in another cloud** ✅ built and tested offline
 2. **Patch schedules with a test ring** in Azure Update Manager: test ring first, branches after hours ✅ built and tested offline
 3. **Security baseline checks** (built from CIS) with Azure Policy machine configuration, and Defender for Cloud findings ✅ built and tested offline
-4. **Central logs in Sentinel**, and an emergency patch drill that times how long it takes to patch every server
+4. **Central logs in Sentinel**, and an emergency patch drill that times how long it takes to patch every server ✅ built and tested offline
 
 ## Layout
 
 ```
-infra/          Terraform: the onboarding identity, its secret and the Key Vault; patch windows; baselines
+infra/          Terraform: the onboarding identity, its secret and the Key Vault; patch windows; baselines; logs and Sentinel
 lab/            the eight servers: inventory.json, branches/ (Vagrant, with the hardening scripts) and aws/ (Terraform)
 onboarding/     onboard.py: connect every server to Azure Arc, and time it
-oneview/        reports from Azure Resource Graph: patching.py, baseline.py, and their queries/
+detections/     Sentinel's alert rules: one query each, and rules.json
+oneview/        patching.py and baseline.py (reports from Azure Resource Graph), drill.py (the emergency patch drill)
 tests/          Python tests
 ```

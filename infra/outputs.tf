@@ -20,3 +20,12 @@ output "baseline_policies" {
   description = "The baseline policy assignments, for checking compliance in the portal."
   value       = { for os, a in azurerm_resource_group_policy_assignment.baseline : os => a.id }
 }
+
+output "logs" {
+  description = "Where the servers' logs go, and the alert rules watching them."
+  value = {
+    workspace   = azurerm_log_analytics_workspace.oneview.name
+    servers     = sort(keys(azurerm_monitor_data_collection_rule_association.server))
+    alert_rules = sort([for r in azurerm_sentinel_alert_rule_scheduled.detection : r.display_name])
+  }
+}

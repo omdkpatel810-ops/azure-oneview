@@ -1,46 +1,11 @@
-# Offline tests: both providers are mocked, so these need no Azure account.
+# Offline tests: both providers are mocked (tests/mocks), so these need no Azure account.
 
 mock_provider "azurerm" {
-  mock_data "azurerm_client_config" {
-    defaults = {
-      tenant_id       = "00000000-0000-0000-0000-00000000aaaa"
-      subscription_id = "00000000-0000-0000-0000-00000000bbbb"
-      object_id       = "00000000-0000-0000-0000-00000000cccc"
-    }
-  }
-
-  mock_data "azurerm_resource_group" {
-    defaults = {
-      id       = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod"
-      location = "canadacentral"
-      tags     = { owner = "it-ops-lead@example.com", "cost-center" = "cc-7300", environment = "prod", team = "oneview", request = "oneview-prod.json" }
-    }
-  }
-
-  mock_resource "azurerm_maintenance_configuration" {
-    defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.Maintenance/maintenanceConfigurations/mc" }
-  }
-
-  mock_resource "azurerm_resource_group_policy_assignment" {
-    defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.Authorization/policyAssignments/pa" }
-  }
-
-  mock_resource "azurerm_key_vault" {
-    defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-oneview-prod/providers/Microsoft.KeyVault/vaults/kv-oneview" }
-  }
+  source = "./tests/mocks/azurerm"
 }
 
 mock_provider "azuread" {
-  mock_resource "azuread_application" {
-    defaults = {
-      id        = "/applications/00000000-0000-0000-0000-00000000dddd"
-      client_id = "00000000-0000-0000-0000-00000000eeee"
-    }
-  }
-
-  mock_resource "azuread_service_principal" {
-    defaults = { object_id = "00000000-0000-0000-0000-00000000ffff" }
-  }
+  source = "./tests/mocks/azuread"
 }
 
 variables {

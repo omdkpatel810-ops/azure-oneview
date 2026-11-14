@@ -1,0 +1,5 @@
+// An account was added to a server's local Administrators group (event 4732).
+// The group's SID, S-1-5-32-544, is the same on every Windows server.
+SecurityEvent
+| where EventID == 4732 and TargetSid == "S-1-5-32-544"
+| project TimeGenerated, Host = Computer, Account = iff(MemberName == "-", MemberSid, MemberName), AddedBy = SubjectAccount

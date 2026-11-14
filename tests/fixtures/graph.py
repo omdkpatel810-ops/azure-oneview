@@ -6,8 +6,8 @@ import json
 
 
 class FakeAz:
-    def __init__(self, tables: dict[str, list[dict]] | None = None, fail: str | None = None):
-        self.tables = tables or {}
+    def __init__(self, tables: dict | None = None, fail: str | None = None):
+        self.tables = tables or {}  # query marker -> rows, or a function returning rows
         self.fail = fail  # a word that makes any command containing it fail
         self.calls: list[list[str]] = []
 
@@ -18,8 +18,9 @@ class FakeAz:
             return 1, f"ERROR: {self.fail} went wrong"
         if args[:3] == ["az", "graph", "query"]:
             kql = args[4]
-            for marker, rows in self.tables.items():
+            for marker, table in self.tables.items():
                 if marker in kql:
+                    rows = table() if callable(table) else table
                     return 0, json.dumps({"count": len(rows), "data": rows})
             return 0, json.dumps({"count": 0, "data": []})
         if args[:3] == ["az", "account", "show"]:
