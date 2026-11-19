@@ -17,7 +17,9 @@ Shell = Callable[[list[str], str | None], tuple[int, str]]
 
 def run_shell(args: list[str], stdin: str | None = None) -> tuple[int, str]:  # pragma: no cover - real commands
     p = subprocess.run(args, input=stdin, capture_output=True, text=True, check=False)
-    return p.returncode, p.stdout + p.stderr
+    # Warnings go to stderr even when a command works (az graph is an extension and says so); only keep
+    # them when it didn't.
+    return p.returncode, p.stdout if p.returncode == 0 else p.stdout + p.stderr
 
 
 def kql(name: str, resource_group: str) -> str:
